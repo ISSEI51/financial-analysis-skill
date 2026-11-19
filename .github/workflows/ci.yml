@@ -1,0 +1,42 @@
+# `just ci` と同じ構成（lint と test を並列に実行）
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: extractions/setup-just@v2
+      - run: just lint
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: extractions/setup-just@v2
+      - name: Install draw.io Desktop, poppler, Xvfb and Japanese fonts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download --repo jgraph/drawio-desktop --pattern 'drawio-amd64-*.deb' --dir /tmp/drawio
+          sudo apt-get update
+          sudo apt-get install -y /tmp/drawio/drawio-amd64-*.deb xvfb poppler-utils fonts-noto-cjk
+      - name: just test
+        env:
+          # draw.io（Electron）を CI のサンドボックスなし・仮想ディスプレイで動かす
+          FRA_DRAWIO_ARGS: "--no-sandbox"
+        run: xvfb-run -a just test

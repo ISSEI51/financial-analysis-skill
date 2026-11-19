@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "sample": true,
+  "company": {"name": "サンプル債務超過ホールディングス株式会社（架空）", "short_name": "サンプル債務超過HD（架空）", "code": "000A", "industry": "サービス業（サンプル）"},
+  "period": {"label": "2027年3月期_第1四半期", "fiscal_year": "2027年3月期", "type": "Q1", "start": "2026-04-01", "end": "2026-06-30", "months": 3, "is_cumulative": true, "published": "2026-08-10"},
+  "basis": {"standard": "IFRS", "scope": "連結", "unit": "百万円", "rounding": "百万円未満四捨五入"},
+  "sources": [{"id": "S1", "title": "【サンプル】架空の第1四半期決算短信〔IFRS〕", "url": "https://example.com/sample-deficit.pdf", "published": "2026-08-10", "kind": "サンプル"}],
+  "pl": {
+    "revenue_key": "revenue", "split_after": "operating_income", "net_income_key": "net_income_parent",
+    "lines": [
+      {"key": "revenue", "label": "売上収益", "kind": "revenue", "value": 5000, "prior": 4000, "src": "S1"},
+      {"key": "cogs", "label": "売上原価", "kind": "expense", "value": 3000, "prior": 2600, "src": "S1"},
+      {"key": "gross_profit", "label": "売上総利益", "kind": "subtotal", "value": 2000, "prior": 1400, "src": "S1"},
+      {"key": "sga", "label": "販売費及び一般管理費", "kind": "expense", "value": 2300, "prior": 1900, "src": "S1"},
+      {"key": "other_income", "label": "その他の収益", "kind": "income", "value": 400, "prior": 50, "src": "S1", "one_off": true},
+      {"key": "other_expense", "label": "その他の費用", "kind": "expense", "value": 300, "prior": 100, "src": "S1"},
+      {"key": "operating_income", "label": "営業利益", "kind": "subtotal", "value": -200, "prior": -550, "src": "S1"},
+      {"key": "finance_income", "label": "金融収益", "kind": "income", "value": 20, "prior": 10, "src": "S1"},
+      {"key": "finance_costs", "label": "金融費用", "kind": "expense", "value": 150, "prior": 140, "src": "S1"},
+      {"key": "equity_method", "label": "持分法による投資損益", "kind": "income", "value": -30, "prior": 10, "src": "S1"},
+      {"key": "pretax_income", "label": "税引前四半期利益", "kind": "subtotal", "value": -360, "prior": -670, "src": "S1"},
+      {"key": "income_taxes", "label": "法人所得税費用", "kind": "expense", "value": -40, "prior": -20, "src": "S1"},
+      {"key": "net_income", "label": "四半期利益", "kind": "subtotal", "value": -320, "prior": -650, "src": "S1"},
+      {"key": "nci", "label": "非支配持分に帰属する四半期利益", "kind": "attribution", "value": 0, "prior": 0, "src": "S1"},
+      {"key": "net_income_parent", "label": "親会社の所有者に帰属する四半期利益", "kind": "subtotal", "value": -320, "prior": -650, "src": "S1"}
+    ]
+  },
+  "bs": {
+    "date": "2026-06-30", "prior_date": "2026-03-31",
+    "assets": [
+      {"group": "流動資産", "key": "cash", "label": "現金及び現金同等物", "value": 800, "prior": 1000, "src": "S1", "highlight": true},
+      {"group": "流動資産", "key": "receivables", "label": "営業債権及びその他の債権", "value": 1200, "prior": 1100, "src": "S1"},
+      {"group": "流動資産", "key": "inventories", "label": "棚卸資産", "value": 600, "prior": 650, "src": "S1"},
+      {"group": "流動資産", "label": "その他の流動資産", "value": 100, "prior": 90, "src": "S1"},
+      {"group": "非流動資産", "key": "ppe", "label": "有形固定資産", "value": 2000, "prior": 2050, "src": "S1"},
+      {"group": "非流動資産", "label": "使用権資産", "value": 500, "prior": 520, "src": "S1"},
+      {"group": "非流動資産", "key": "goodwill", "label": "のれん", "value": 300, "prior": 300, "src": "S1", "highlight": true},
+      {"group": "非流動資産", "label": "その他の非流動資産", "value": 200, "prior": 190, "src": "S1"}
+    ],
+    "liabilities": [
+      {"group": "流動負債", "key": "payables", "label": "営業債務及びその他の債務", "value": 1500, "prior": 1400, "src": "S1"},
+      {"group": "流動負債", "label": "借入金（流動）", "value": 2500, "prior": 2300, "src": "S1", "interest_bearing": true, "highlight": true},
+      {"group": "流動負債", "label": "リース負債（流動）", "value": 150, "prior": 150, "src": "S1", "interest_bearing": true, "lease": true},
+      {"group": "流動負債", "label": "その他の流動負債", "value": 300, "prior": 310, "src": "S1"},
+      {"group": "非流動負債", "label": "借入金（非流動）", "value": 1200, "prior": 1500, "src": "S1", "interest_bearing": true},
+      {"group": "非流動負債", "label": "リース負債（非流動）", "value": 380, "prior": 400, "src": "S1", "interest_bearing": true, "lease": true},
+      {"group": "非流動負債", "label": "その他の非流動負債", "value": 170, "prior": 160, "src": "S1"}
+    ],
+    "equity": [
+      {"group": "資本", "label": "親会社の所有者に帰属する持分", "value": -520, "prior": -340, "src": "S1"},
+      {"group": "資本", "label": "非支配持分", "value": 20, "prior": 20, "src": "S1"}
+    ],
+    "group_totals": {"流動資産": {"value": 2700, "prior": 2840}, "非流動資産": {"value": 3000, "prior": 3060},
+                     "流動負債": {"value": 4450, "prior": 4160}, "非流動負債": {"value": 1750, "prior": 2060}, "資本": {"value": -500, "prior": -320}},
+    "totals": {"current_assets": {"value": 2700, "prior": 2840}, "assets": {"value": 5700, "prior": 5900},
+               "current_liabilities": {"value": 4450, "prior": 4160}, "liabilities": {"value": 6200, "prior": 6220},
+               "net_assets": {"value": -500, "prior": -320}, "liabilities_and_net_assets": {"value": 5700, "prior": 5900}},
+    "owners_equity": {"label": "親会社の所有者に帰属する持分", "value": -520, "prior": -340, "src": "S1"}
+  },
+  "cf": {"disclosed": false, "reason_if_not": "【サンプル】第1四半期決算短信では四半期キャッシュ・フロー計算書の作成を省略している"},
+  "segments": [],
+  "forecast": {"period": "2027年3月期", "as_of": "2026-08-10", "revenue": 21000, "operating_income": 200, "net_income_parent": -500, "revised": false, "src": "S1"},
+  "extra": [], "notes": ["サンプル：IFRS・債務超過・CF未開示・税効果によるプラスの法人所得税のテスト用"]
+}

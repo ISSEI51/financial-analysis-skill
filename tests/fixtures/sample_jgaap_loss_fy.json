@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "sample": true,
+  "company": {"name": "サンプル赤字工業株式会社（架空）", "short_name": "サンプル赤字工業（架空）", "code": "0000", "industry": "機械（サンプル）", "fiscal_year_end_month": 3},
+  "period": {"label": "2026年3月期_本決算", "fiscal_year": "2026年3月期", "type": "FY", "start": "2025-04-01", "end": "2026-03-31", "months": 12, "is_cumulative": true, "published": "2026-05-10"},
+  "basis": {"standard": "J-GAAP", "scope": "連結", "unit": "百万円", "rounding": "百万円未満切捨て"},
+  "sources": [{"id": "S1", "title": "【サンプル】架空の決算短信", "url": "https://example.com/sample-loss.pdf", "published": "2026-05-10", "kind": "サンプル"}],
+  "pl": {
+    "revenue_key": "revenue", "split_after": "operating_income", "net_income_key": "net_income_parent",
+    "lines": [
+      {"key": "revenue", "label": "売上高", "kind": "revenue", "value": 10000, "prior": 12000, "src": "S1"},
+      {"key": "cogs", "label": "売上原価", "kind": "expense", "value": 8200, "prior": 9000, "src": "S1"},
+      {"key": "gross_profit", "label": "売上総利益", "kind": "subtotal", "value": 1800, "prior": 3000, "src": "S1"},
+      {"key": "sga", "label": "販売費及び一般管理費", "kind": "expense", "value": 2600, "prior": 2500, "src": "S1"},
+      {"key": "operating_income", "label": "営業利益", "kind": "subtotal", "value": -800, "prior": 500, "src": "S1"},
+      {"key": "non_op_income", "label": "営業外収益", "kind": "income", "value": 120, "prior": 100, "src": "S1"},
+      {"key": "non_op_expense", "label": "営業外費用", "kind": "expense", "value": 220, "prior": 150, "src": "S1"},
+      {"label": "支払利息", "kind": "expense", "parent": "non_op_expense", "key": "interest_expense", "value": 90, "prior": 60, "src": "S1"},
+      {"label": "その他", "kind": "expense", "parent": "non_op_expense", "value": 130, "prior": 90, "src": "S1"},
+      {"key": "ordinary_income", "label": "経常利益", "kind": "subtotal", "value": -900, "prior": 450, "src": "S1"},
+      {"key": "extraordinary_income", "label": "特別利益", "kind": "income", "value": 50, "prior": 0, "src": "S1"},
+      {"key": "extraordinary_loss", "label": "特別損失", "kind": "expense", "value": 400, "prior": 30, "src": "S1"},
+      {"label": "減損損失", "kind": "expense", "parent": "extraordinary_loss", "value": 400, "prior": 30, "src": "S1", "one_off": true},
+      {"key": "pretax_income", "label": "税金等調整前当期純利益", "kind": "subtotal", "value": -1250, "prior": 420, "src": "S1"},
+      {"key": "income_taxes", "label": "法人税等合計", "kind": "expense", "value": 60, "prior": 150, "src": "S1"},
+      {"key": "net_income", "label": "当期純利益", "kind": "subtotal", "value": -1310, "prior": 270, "src": "S1"},
+      {"key": "nci", "label": "非支配株主に帰属する当期純利益", "kind": "attribution", "value": -10, "prior": 5, "src": "S1"},
+      {"key": "net_income_parent", "label": "親会社株主に帰属する当期純利益", "kind": "subtotal", "value": -1300, "prior": 265, "src": "S1"}
+    ]
+  },
+  "bs": {
+    "date": "2026-03-31", "prior_date": "2025-03-31",
+    "assets": [
+      {"group": "流動資産", "key": "cash", "label": "現金及び預金", "value": 1500, "prior": 2600, "src": "S1", "highlight": true},
+      {"group": "流動資産", "key": "receivables", "label": "受取手形及び売掛金", "value": 2000, "prior": 2300, "src": "S1"},
+      {"group": "流動資産", "key": "inventories", "label": "棚卸資産", "value": 1800, "prior": 1700, "src": "S1", "highlight": true},
+      {"group": "流動資産", "label": "その他", "value": 300, "prior": 250, "src": "S1"},
+      {"group": "固定資産", "key": "ppe", "label": "有形固定資産", "value": 3000, "prior": 3100, "src": "S1"},
+      {"group": "固定資産", "key": "intangibles", "label": "無形固定資産", "value": 200, "prior": 250, "src": "S1"},
+      {"group": "固定資産", "label": "投資その他の資産", "value": 700, "prior": 800, "src": "S1"}
+    ],
+    "liabilities": [
+      {"group": "流動負債", "key": "payables", "label": "支払手形及び買掛金", "value": 1500, "prior": 1600, "src": "S1"},
+      {"group": "流動負債", "label": "短期借入金", "value": 2000, "prior": 1200, "src": "S1", "interest_bearing": true, "highlight": true},
+      {"group": "流動負債", "label": "その他", "value": 800, "prior": 700, "src": "S1"},
+      {"group": "固定負債", "label": "長期借入金", "value": 2500, "prior": 2500, "src": "S1", "interest_bearing": true},
+      {"group": "固定負債", "label": "リース債務", "value": 100, "prior": 120, "src": "S1", "interest_bearing": true, "lease": true},
+      {"group": "固定負債", "label": "その他", "value": 300, "prior": 280, "src": "S1"}
+    ],
+    "equity": [
+      {"group": "純資産", "key": "shareholders_equity", "label": "株主資本", "value": 2180, "prior": 4480, "src": "S1"},
+      {"group": "純資産", "label": "その他の包括利益累計額", "value": 70, "prior": 60, "src": "S1"},
+      {"group": "純資産", "label": "非支配株主持分", "value": 50, "prior": 60, "src": "S1"}
+    ],
+    "group_totals": {"流動資産": {"value": 5600, "prior": 6850}, "固定資産": {"value": 3900, "prior": 4150},
+                     "流動負債": {"value": 4300, "prior": 3500}, "固定負債": {"value": 2900, "prior": 2900}, "純資産": {"value": 2300, "prior": 4600}},
+    "totals": {"current_assets": {"value": 5600, "prior": 6850}, "assets": {"value": 9500, "prior": 11000},
+               "current_liabilities": {"value": 4300, "prior": 3500}, "liabilities": {"value": 7200, "prior": 6400},
+               "net_assets": {"value": 2300, "prior": 4600}, "liabilities_and_net_assets": {"value": 9500, "prior": 11000}},
+    "owners_equity": {"label": "自己資本", "value": 2250, "prior": 4540, "src": "S1"}
+  },
+  "cf": {
+    "disclosed": true, "cash_definition": "現金及び現金同等物",
+    "begin": {"label": "現金及び現金同等物の期首残高", "value": 2600, "prior": 2400, "src": "S1"},
+    "end": {"label": "現金及び現金同等物の期末残高", "value": 1500, "prior": 2600, "src": "S1"},
+    "lines": [
+      {"key": "cfo", "label": "営業活動によるキャッシュ・フロー", "value": -500, "prior": 900, "src": "S1"},
+      {"key": "cfi", "label": "投資活動によるキャッシュ・フロー", "value": -600, "prior": -500, "src": "S1"},
+      {"key": "cff", "label": "財務活動によるキャッシュ・フロー", "value": 30, "prior": -220, "src": "S1"},
+      {"key": "fx", "label": "現金及び現金同等物に係る換算差額", "value": -30, "prior": 20, "src": "S1"}
+    ],
+    "capex": {"label": "有形固定資産の取得による支出", "value": 450, "prior": 400, "src": "S1"}
+  },
+  "segments": [
+    {"name": "産業機械（サンプル）", "revenue": 7000, "revenue_prior": 8500, "profit": -500, "profit_prior": 400, "src": "S1"},
+    {"name": "保守サービス（サンプル）", "revenue": 3000, "revenue_prior": 3500, "profit": 200, "profit_prior": 300, "src": "S1"}
+  ],
+  "forecast": {"period": "2027年3月期", "as_of": "2026-05-10", "revenue": 10500, "operating_income": 100, "ordinary_income": 0, "net_income_parent": -100, "revised": false, "src": "S1"},
+  "extra": [], "notes": ["サンプル：赤字決算・減損・借入増加のテスト用"]
+}
