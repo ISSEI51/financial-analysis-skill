@@ -1,0 +1,182 @@
+{
+ "schema": "fra-bizmodel",
+ "schema_version": 1,
+ "sample": true,
+ "draft": false,
+ "company": {
+  "name": "サンプル赤字工業株式会社（架空）",
+  "short_name": "サンプル赤字工業（架空）",
+  "code": "0000"
+ },
+ "period": "2026年3月期_本決算",
+ "model_type": "manufacturing_wholesale",
+ "layout": {
+  "split": "auto"
+ },
+ "sources": [
+  {
+   "id": "S2",
+   "title": "【サンプル】架空の決算説明資料",
+   "url": "https://example.com/sample-presentation.pdf",
+   "published": "2026-05-10",
+   "kind": "サンプル"
+  }
+ ],
+ "groups": [],
+ "nodes": [
+  {
+   "id": "self",
+   "name": "サンプル赤字工業（架空）",
+   "type": "factory",
+   "role": "self",
+   "description": "産業機械の製造・販売と保守サービス（架空）",
+   "source": "S1 p.2"
+  },
+  {
+   "id": "parts",
+   "name": "部品メーカー",
+   "type": "factory",
+   "role": "supplier",
+   "description": "機械部品の仕入先（個別の社名は資料に記載なし）",
+   "source": "S2 p.3"
+  },
+  {
+   "id": "dealer",
+   "name": "販売代理店",
+   "type": "company",
+   "role": "channel",
+   "description": "国内外の販売代理店",
+   "source": "S2 p.4"
+  },
+  {
+   "id": "maker",
+   "name": "製造業の顧客企業",
+   "type": "factory",
+   "role": "customer",
+   "description": "機械を導入する製造業",
+   "source": "S2 p.4"
+  },
+  {
+   "id": "bank",
+   "name": "金融機関",
+   "type": "financial",
+   "role": "investor",
+   "description": "借入先",
+   "source": "S1 p.10"
+  },
+  {
+   "id": "maint",
+   "name": "保守協力会社",
+   "type": "company",
+   "role": "partner",
+   "description": "保守作業の一部を受託する会社",
+   "source": "S2 p.6"
+  }
+ ],
+ "edges": [
+  {
+   "from": "parts",
+   "to": "self",
+   "type": "service",
+   "label": "部品の供給",
+   "source": "S2 p.3",
+   "evidence_level": "fact"
+  },
+  {
+   "from": "self",
+   "to": "parts",
+   "type": "money",
+   "label": "部品代金",
+   "source": "S2 p.3",
+   "evidence_level": "interpretation",
+   "note": "部品を外部から調達するとの記載から"
+  },
+  {
+   "from": "self",
+   "to": "dealer",
+   "type": "service",
+   "label": "産業機械の販売",
+   "source": "S2 p.4",
+   "evidence_level": "fact"
+  },
+  {
+   "from": "dealer",
+   "to": "self",
+   "type": "money",
+   "label": "販売代金",
+   "source": "S2 p.4",
+   "evidence_level": "interpretation",
+   "note": "代理店経由の販売との記載から"
+  },
+  {
+   "from": "dealer",
+   "to": "maker",
+   "type": "service",
+   "label": "機械の納入",
+   "source": "S2 p.4",
+   "evidence_level": "fact"
+  },
+  {
+   "from": "maker",
+   "to": "dealer",
+   "type": "money",
+   "label": "購入代金",
+   "source": "S2 p.4",
+   "evidence_level": "interpretation",
+   "note": "代理店経由の販売との記載から"
+  },
+  {
+   "from": "self",
+   "to": "maker",
+   "type": "service",
+   "label": "保守サービス",
+   "source": "S2 p.5",
+   "evidence_level": "fact"
+  },
+  {
+   "from": "maker",
+   "to": "self",
+   "type": "money",
+   "label": "保守料（年額）",
+   "source": "S2 p.5",
+   "evidence_level": "fact"
+  },
+  {
+   "from": "maker",
+   "to": "self",
+   "type": "information",
+   "label": "機械の稼働データ",
+   "source": "S2 p.5",
+   "evidence_level": "hypothesis",
+   "note": "保守契約に遠隔監視が含まれるとの記載から推測"
+  },
+  {
+   "from": "bank",
+   "to": "self",
+   "type": "money",
+   "label": "借入金",
+   "source": "S1 p.10",
+   "evidence_level": "fact"
+  },
+  {
+   "from": "maint",
+   "to": "self",
+   "type": "operation",
+   "label": "保守作業の受託",
+   "source": "S2 p.6",
+   "evidence_level": "fact"
+  },
+  {
+   "from": "self",
+   "to": "maint",
+   "type": "money",
+   "label": "委託費",
+   "source": "S2 p.6",
+   "evidence_level": "interpretation",
+   "note": "作業の委託との記載から"
+  }
+ ],
+ "notes": [
+  "サンプルデータ（架空）"
+ ]
+}

@@ -8,6 +8,8 @@
   ---
   <!-- fra:nav:start --> … <!-- fra:nav:end -->     ← 相互リンク（毎回再生成）
   <!-- fra:auto:start --> … <!-- fra:auto:end -->   ← 分析本文（fra_auto_hash で人手編集を検出）
+  <!-- fra:bm:start --> … <!-- fra:bm:end -->       ← 企業概要のみ：最新のビジネスモデル図（relink が再生成）
+  <!-- fra:list:start --> … <!-- fra:list:end -->   ← 企業概要のみ：決算一覧と主要数値の推移（relink が再生成）
   ## メモ                                            ← 利用者の自由記述（変更しない）
 
 使い方:
@@ -18,7 +20,7 @@
   python3 -I obsidian.py upsert --note <path.md> --body <body.md> --frontmatter <fm.json> [--force]
   python3 -I obsidian.py relink --code 7974 [--vault PATH]       # 企業概要の決算一覧・各決算ノートの前後リンク・企業一覧を再生成
   python3 -I obsidian.py refresh-tables --note <path.md> --data <data.json>   # 表だけをデータから作り直す
-  python3 -I obsidian.py embeds --code 7974 --period 2027年3月期_第2四半期 [--vault PATH]
+  python3 -I obsidian.py embeds --code 7974 --period 2027年3月期_第2四半期 [--kind PL,BS,CF,SEG,BM] [--vault PATH]
 
 終了コード: 0=成功, 2=引数・環境エラー, 3=Vault を利用者に確認する必要あり, 4=人手編集を検出したため更新を中止
 """
@@ -42,6 +44,7 @@ from fra_common import CONFIG_PATH, cache_dir, die, emit, load_config, save_conf
 AUTO_S, AUTO_E = "<!-- fra:auto:start -->", "<!-- fra:auto:end -->"
 NAV_S, NAV_E = "<!-- fra:nav:start -->", "<!-- fra:nav:end -->"
 LIST_S, LIST_E = "<!-- fra:list:start -->", "<!-- fra:list:end -->"
+BM_S, BM_E = "<!-- fra:bm:start -->", "<!-- fra:bm:end -->"
 MEMO_HEADER = "## メモ（自由記述）\n\n<!-- この見出しより下は自動更新で変更されません。気づいたことを自由に書いてください。 -->\n"
 PERIOD_ORDER = {"第1四半期": 1, "第2四半期": 2, "第3四半期": 3, "本決算": 4}
 MANAGED_KEYS = ["会社名", "証券コード", "業種", "決算期", "対象期間", "資料公表日", "分析日", "会計基準", "連結・単体",
@@ -360,16 +363,56 @@ def relink(vault: Path, code: str) -> dict:
             lst += f"\n単位：{'・'.join(sorted(units))}。四半期は累計値（単独四半期ではない）。期の種類が異なる行同士は直接比較しないこと。"
             if h["comparability_notes"]:
                 lst += "\n\n> [!warning] 比較可能性\n" + "\n".join(f"> - {x}" for x in h["comparability_notes"])
+    bm_block = overview_bm_block(vault, cdir, notes)
     if overview.exists():
         t = overview.read_text(encoding="utf-8")
         fm, rest = split_note(t)
         rest2 = replace_block(rest, LIST_S, LIST_E, lst)
+        if bm_block:
+            if BM_S in rest2:
+                rest2 = replace_block(rest2, BM_S, BM_E, bm_block)
+            else:
+                # 利用者のメモ欄より前（決算一覧の直前）に入れる
+                blk = f"{BM_S}\n{bm_block}\n{BM_E}\n\n"
+                anchor = LIST_S if LIST_S in rest2 else ("## メモ" if "## メモ" in rest2 else None)
+                rest2 = rest2.replace(anchor, blk + anchor, 1) if anchor else rest2.rstrip("\n") + "\n\n" + blk
         if rest2 != rest:
             overview.write_text(("---\n" + "\n".join(fm) + "\n---\n" if fm else "") + rest2, encoding="utf-8")
             changed.append(str(overview))
     idx = update_index(vault)
     return {"ok": True, "company_dir": str(cdir), "period_notes": [str(n) for n in notes], "changed": changed,
             "index": idx}
+
+
+def bm_figures(cdir: Path, period: str) -> list[dict]:
+    """bizmodel.py build の結果（<period>_BM_figures.json）のうち、SVG が存在する図。失敗した生成は含めない。"""
+    fj = cdir / "assets" / f"{period}_BM_figures.json"
+    if not fj.exists():
+        return []
+    try:
+        r = json.loads(fj.read_text(encoding="utf-8"))
+    except ValueError:
+        return []
+    if not r.get("ok"):
+        return []
+    return [f for f in r.get("figures", []) if (cdir / "assets" / f"{period}_{f['figure']}.svg").exists()]
+
+
+def overview_bm_block(vault: Path, cdir: Path, notes: list[Path]) -> str | None:
+    """最新の決算期のうち、ビジネスモデル図（全社概要）がある期の図を企業概要に置く。"""
+    width = load_config().get("embed_width", 760)
+    for n in reversed(notes):
+        figs = [f for f in bm_figures(cdir, n.stem) if f["figure"] == "BM"]
+        if not figs:
+            continue
+        svg = cdir / "assets" / f"{n.stem}_BM.svg"
+        dio = svg.with_suffix(".drawio")
+        url = "file://" + urllib.parse.quote(str(dio))
+        label = n.stem.replace("_", " ")
+        return (f"### ビジネスモデル図（{label}時点・自動更新）\n\n![[{vault_rel(vault, svg)}|{width}]]\n"
+                f"*図：ビジネスモデル（全社概要）。主体の一覧と事業別の図は {wl(vault, n, label)} の「ビジネスモデル」を参照。"
+                f"編集用ファイル：[{dio.name}]({url})（`{vault_rel(vault, dio)}`）*")
+    return None
 
 
 def update_index(vault: Path) -> str:
@@ -427,14 +470,21 @@ def embeds(vault: Path, code: str, period: str, kinds: list[str] | None = None) 
     width = load_config().get("embed_width", 760)
     out = []
     names = {"PL": "損益計算書（PL）", "BS": "貸借対照表（BS）", "CF": "キャッシュ・フロー（CF）", "SEG": "セグメント・売上構成"}
-    for kind in (kinds or ["PL", "BS", "CF", "SEG"]):
+    figs = []
+    for kind in (kinds or ["PL", "BS", "CF", "SEG", "BM"]):
+        if kind == "BM":
+            # ビジネスモデル図：全社概要（BM）と事業別の詳細図（BM-<事業>）
+            figs += [(f["figure"], f"ビジネスモデル（{f['title']}）") for f in bm_figures(cdir, period)]
+        else:
+            figs.append((kind, names[kind]))
+    for kind, title in figs:
         svg = cdir / "assets" / f"{period}_{kind}.svg"
         dio = cdir / "assets" / f"{period}_{kind}.drawio"
         if not svg.exists():
             continue
         url = "file://" + urllib.parse.quote(str(dio))
         out.append(f"<!-- fra:fig:{kind} -->\n![[{vault_rel(vault, svg)}|{width}]]\n"
-                   f"*図：{names[kind]}。編集用ファイル：[{dio.name}]({url})（`{vault_rel(vault, dio)}`。draw.io で開く。SVG にも図のデータを埋め込み済み）*")
+                   f"*図：{title}。編集用ファイル：[{dio.name}]({url})（`{vault_rel(vault, dio)}`。draw.io で開く。SVG にも図のデータを埋め込み済み）*")
     return "\n\n".join(out)
 
 
@@ -458,8 +508,21 @@ def refresh_tables(note: Path, data: Path) -> dict:
                 "message": "自動生成部分が人手で編集されているため表を更新しない"}
     changed = []
 
+    bm_path = data.parent / "bizmodel" / data.name
+
     def rep(m):
         k = m.group(1)
+        if k == "bizmodel":
+            if not bm_path.exists():
+                return m.group(0)
+            from bizmodel import load_json as bm_load, table as bm_table, validate as bm_validate
+            bm = bm_load(bm_path)
+            if not bm_validate(bm, d)["ok"]:
+                return m.group(0)
+            new = bm_table(bm).strip()
+            if new != m.group(0).strip():
+                changed.append(k)
+            return new
         if k not in TABLES or (k == "bs" and not d.get("bs")):
             return m.group(0)
         new = TABLES[k](d).strip()
@@ -488,7 +551,7 @@ def main():
     for c in ("paths", "init-company", "relink", "embeds"):
         x = sp.add_parser(c)
         if c == "embeds":
-            x.add_argument("--kind", help="PL,BS,CF,SEG のうち出力する図（カンマ区切り。省略時はすべて）")
+            x.add_argument("--kind", help="PL,BS,CF,SEG,BM のうち出力する図（カンマ区切り。省略時はすべて。BM は全社概要と事業別の図）")
         x.add_argument("--vault")
         x.add_argument("--code", required=True)
         x.add_argument("--name")
@@ -536,8 +599,10 @@ def main():
                "existing_periods": [p.stem for p in period_notes(cdir)] if cdir.exists() else []}
         if a.period:
             note = cdir / f"{a.period}.md"
+            bmp = cdir / "data" / "bizmodel" / f"{a.period}.json"
             res.update({"note": str(note), "note_exists": note.exists(), "data": str(cdir / "data" / f"{a.period}.json"),
-                        "data_exists": (cdir / "data" / f"{a.period}.json").exists()})
+                        "data_exists": (cdir / "data" / f"{a.period}.json").exists(),
+                        "bizmodel": str(bmp), "bizmodel_exists": bmp.exists()})
         emit(res)
     elif a.cmd == "init-company":
         v = resolve_vault(a.vault)

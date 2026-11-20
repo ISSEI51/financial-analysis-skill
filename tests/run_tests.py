@@ -349,6 +349,33 @@ def wrap_kinsoku_and_katakana():
 
 
 @test
+def xbrl_pl_tax_line_without_total():
+    """四半期の税金費用が「法人税、住民税及び事業税」の1行だけで合計（法人税等）の行がない場合（日本情報クリエイトで発見）：
+    存在しない親の内訳にせず、税金費用（income_taxes）として段階利益の計算に含める。合計の行がある場合は従来どおり内訳にする。"""
+    sys.path.insert(0, str(SCRIPTS))
+    import xbrl_to_data
+
+    def facts(rows):
+        per = {"start": "2026-07-01", "end": "2026-09-30"}
+        return [{"name": f"jppfs_cor:{n}", "label": lab, "value": v, "context": "Cur", "unit": "JPY", "nil": False,
+                 "order": i, "period": per} for i, (n, lab, v) in enumerate(rows)]
+
+    head = [("NetSales", "売上高", "1000"), ("OperatingIncome", "営業利益", "300"), ("OrdinaryIncome", "経常利益", "300"),
+            ("IncomeBeforeIncomeTaxes", "税引前四半期純利益", "300")]
+    lines, _ = xbrl_to_data.build_pl(facts(head + [("IncomeTaxesCurrent", "法人税、住民税及び事業税", "100"),
+                                                   ("ProfitLoss", "四半期純利益", "200")]), None)
+    tax = next(ln for ln in lines if ln["xbrl"] == "IncomeTaxesCurrent")
+    assert tax.get("key") == "income_taxes" and "parent" not in tax and tax["kind"] == "expense", tax
+    lines, _ = xbrl_to_data.build_pl(facts(head + [("IncomeTaxesCurrent", "法人税、住民税及び事業税", "120"),
+                                                   ("IncomeTaxesDeferred", "法人税等調整額", "-20"),
+                                                   ("IncomeTaxes", "法人税等合計", "100"),
+                                                   ("ProfitLoss", "四半期純利益", "200")]), None)
+    kids = [ln for ln in lines if ln["xbrl"] in ("IncomeTaxesCurrent", "IncomeTaxesDeferred")]
+    assert all(ln.get("parent") == "income_taxes" and "key" not in ln for ln in kids), kids
+    return {"ok": True}
+
+
+@test
 def xbrl_real_logizard_first_consolidation():
     """ロジザード：初めての連結決算（比較情報なし）・業績予想未定・無借金の表示。"""
     if not LOGIZARD_ZIP.exists():
@@ -531,6 +558,31 @@ def diagrams_loss_cf():
 
 
 @test
+def diagrams_cf_nil_line():
+    """CF の換算差額などが原資料で「－」（XBRL の nil）の場合（うるるで発見）：棒を描かずに CF 図を作り、脚注に示す。
+    nil ではない未取得の値（null だけ）は従来どおり CF 図を作らない（0 で補完しない）。"""
+    d = json.loads((FIX / "sample_jgaap_loss_fy.json").read_text(encoding="utf-8"))
+    fx = next(ln for ln in d["cf"]["lines"] if ln.get("key") == "fx")
+    fx.update({"value": None, "prior": None, "nil_fields": ["value", "prior"]})
+    d["cf"]["end"].update({"value": 1530, "prior": 2580})   # 期首＋営業・投資・財務の合計（換算差額なし）
+    p = TMP / "cf_nil.json"
+    p.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+    r = js(run("diagrams.py", "build", p, "--out-dir", TMP / "fig_cf_nil", "--prefix", "T"))
+    assert r["ok"], r
+    cf = next(f for f in r["figures"] if f["figure"] == "CF")
+    assert cf["verify"]["ok"], cf["verify"]["errors"]
+    assert cf["cf_end_diff"] == "0", cf
+    x = Path(cf["drawio"]).read_text(encoding="utf-8")
+    assert 'fra_name="現金及び現金同等物に係る換算差額"' not in x, "nil の行は棒を描かない"
+    assert "該当なし" in x, "棒を描かなかった項目を脚注に示す"
+    del fx["nil_fields"]                                     # nil の印がない null は未取得の値
+    p.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+    r = js(run("diagrams.py", "build", p, "--out-dir", TMP / "fig_cf_nil2", "--prefix", "T", ok_codes=(0, 1)))
+    assert any(x["figure"] == "CF" for x in r["skipped"]), "未取得の値を 0 で補完して CF 図を作らない"
+    return {"skipped_without_nil": [x["reason"] for x in r["skipped"]]}
+
+
+@test
 def diagrams_deficit_no_cf():
     out = TMP / "fig2"
     r = js(run("diagrams.py", "build", FIX / "sample_ifrs_deficit_q1.json", "--out-dir", out))
@@ -659,25 +711,31 @@ def diagrams_bs_merges_other_with_suffix():
 
 # ---------------------------------------------------------------- 7〜9. Obsidian
 
-def make_note(code, name, fixture, period):
+def make_note(code, name, fixture, period, bm_fixture="sample_bizmodel_small.json"):
     run("obsidian.py", "init-company", "--code", code, "--name", name, "--industry", "サンプル", "--sample")
     paths = js(run("obsidian.py", "paths", "--code", code, "--period", period))
     cd = Path(paths["company_dir"])
     dj = cd / "data" / f"{period}.json"
     shutil.copy(FIX / fixture, dj)
-    run("diagrams.py", "build", dj, "--out-dir", cd / "assets", "--prefix", period)
+    bmj = Path(paths["bizmodel"])
+    bmj.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(FIX / bm_fixture, bmj)
+    r = js(run("diagrams.py", "build", dj, "--out-dir", cd / "assets", "--prefix", period))
+    assert r["bizmodel"]["ok"], r["bizmodel"]
     emb = run("obsidian.py", "embeds", "--code", code, "--period", period).stdout
-    figs = {m.group(1): m.group(0) for m in re.finditer(r"<!-- fra:fig:(\w+) -->\n.*?\n\*.*?\*", emb, re.S)}
+    figs = {m.group(1): m.group(0) for m in re.finditer(r"<!-- fra:fig:([\w-]+) -->\n.*?\n\*.*?\*", emb, re.S)}
     t = {k: run("fin.py", "tables", dj, "--only", k).stdout.strip() for k in ("pl", "bs", "cf", "metrics", "segments", "forecast")}
+    t["bizmodel"] = run("bizmodel.py", "table", bmj).stdout.strip()
     d = json.loads(dj.read_text(encoding="utf-8"))
+    bm = json.loads(bmj.read_text(encoding="utf-8"))
     body = "\n\n".join([
         f"# {name} {period}", "## A. 3分でわかる決算概要",
         "【事実】売上高は100億円（前期比△16.7%）。【解釈】固定費の負担で営業損失。【仮説】受注回復で改善する。判断材料不足の点がある。",
-        "## B. ビジネスモデル", t["segments"], "## C. 損益計算書（PL）", figs.get("PL", ""), t["pl"],
+        "## B. ビジネスモデル", figs.get("BM", ""), t["bizmodel"], t["segments"], "## C. 損益計算書（PL）", figs.get("PL", ""), t["pl"],
         "## D. 貸借対照表（BS）", figs.get("BS", ""), t["bs"], "## E. キャッシュ・フロー計算書（CF）", figs.get("CF", ""), t["cf"],
         "## F. 7つの観点からの分析", t["metrics"], t["forecast"], "## H. まとめ", "### 今回の決算からわかったこと",
         "### まだ判断できないこと", "### 次回決算で確認すべき指標", "## 参考資料・出典",
-        "\n".join(f"- {s['id']}. {s['title']} {s['url']}" for s in d["sources"])])
+        "\n".join(f"- {s['id']}. {s['title']} {s['url']}" for s in d["sources"] + bm.get("sources", []))])
     fm = {"会社名": name, "証券コード": code, "業種": "サンプル", "決算期": period.replace("_", " "), "対象期間": "x",
           "資料公表日": d["period"]["published"], "分析日": "2026-11-18", "会計基準": d["basis"]["standard"],
           "連結・単体": d["basis"]["scope"], "tags": ["決算分析", "サンプル"], "fra_type": "period_report",
@@ -781,6 +839,302 @@ def refresh_tables_keeps_text():
     r2 = js(run("obsidian.py", "refresh-tables", "--note", note, "--data", dj))
     assert r2["action"] == "unchanged"
     return {"changed": r["tables_changed"]}
+
+
+# ---------------------------------------------------------------- ビジネスモデル図
+
+def bm_fixture(name="sample_bizmodel_small.json"):
+    return json.loads((FIX / name).read_text(encoding="utf-8"))
+
+
+def write_json(path, obj):
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_text(json.dumps(obj, ensure_ascii=False, indent=1), encoding="utf-8")
+    return Path(path)
+
+
+@test
+def bizmodel_validate_detects_errors():
+    ok = js(run("bizmodel.py", "validate", FIX / "sample_bizmodel_small.json", "--data", FIX / "sample_jgaap_loss_fy.json"))
+    assert ok["ok"] and not ok["warnings"], ok
+    cases = {}
+    b = bm_fixture(); b["edges"][0]["to"] = "nobody"
+    cases["存在しない主体"] = b
+    b = bm_fixture(); b["nodes"][1]["source"] = ""
+    cases["出典（source）がない"] = b
+    b = bm_fixture(); b["edges"][2]["source"] = "S9 p.1"
+    cases["出典 S9"] = b
+    b = bm_fixture(); b["nodes"][1]["role"] = "self"
+    cases["ちょうど1つ"] = b
+    b = bm_fixture(); b["edges"][8].pop("note")
+    cases["推測の根拠"] = b
+    b = bm_fixture(); b["edges"][0]["type"] = "goods"
+    cases["type「goods」"] = b
+    b = bm_fixture(); b["edges"].append(dict(b["edges"][0]))
+    cases["重複"] = b
+    b = bm_fixture(); b["edges"][0]["from"] = b["edges"][0]["to"]
+    cases["from と to が同じ"] = b
+    big = bm_fixture("sample_bizmodel_large.json"); big["groups"] = []
+    for n in big["nodes"]:
+        n.pop("groups", None)
+    for e in big["edges"]:
+        e.pop("group", None)
+    cases["groups（事業）を定義"] = big
+    found = {}
+    for key, obj in cases.items():
+        pth = write_json(TMP / "bmcase" / "case.json", obj)
+        r = js(run("bizmodel.py", "validate", pth, ok_codes=(1,)))
+        assert not r["ok"] and any(key in x for x in r["errors"]), (key, r["errors"])
+        found[key] = len(r["errors"])
+    return {"detected": list(found)}
+
+
+def _drawio_edges(path):
+    import xml.etree.ElementTree as ET
+    root = ET.parse(path).getroot()
+    nodes = {o.get("id"): o for o in root.iter("object") if o.get("fra_node")}
+    edges = {int(o.get("fra_edge")): o for o in root.iter("object") if o.get("fra_edge")}
+    return root, nodes, edges
+
+
+@test
+def bizmodel_build_small_directions_and_editability():
+    out = TMP / "bm_small"
+    r = js(run("bizmodel.py", "build", FIX / "sample_bizmodel_small.json", "--data", FIX / "sample_jgaap_loss_fy.json",
+               "--out-dir", out, "--prefix", "T"))
+    assert r["ok"] and [f["figure"] for f in r["figures"]] == ["BM"], r
+    f = r["figures"][0]
+    assert f["verify"]["ok"], f["verify"]
+    bm = bm_fixture()
+    root, nodes, edges = _drawio_edges(f["drawio"])
+    assert {o.get("fra_node") for o in nodes.values()} == {n["id"] for n in bm["nodes"]}
+    for i, e in enumerate(bm["edges"], start=1):
+        c = edges[i].find("mxCell")
+        assert c.get("source") == f"n-{e['from']}" and c.get("target") == f"n-{e['to']}", f"関係 {i} の向き"
+        assert edges[i].get("fra_type") == e["type"] and edges[i].get("label").startswith(chr(0x2460 + i - 1))
+    for o in nodes.values():
+        st = o.find("mxCell").get("style")
+        assert "image=data:image/svg+xml," in st and "http" not in st, "アイコンは埋め込みの SVG"
+    svg = Path(f["svg"]).read_text(encoding="utf-8")
+    assert "<mxfile" in svg.replace("&lt;", "<") and "light-dark(" not in svg, "SVG に編集用データを埋め込み・白背景"
+    for n in bm["nodes"]:
+        for line in n["name"].split("（")[0:1]:
+            assert line in svg, line
+    assert "関係（矢印の向き）" not in svg, "関係の一覧表は図に入れない（ノートの表に載せる）"
+    rec = json.loads((out / "T_BM_figures.json").read_text(encoding="utf-8"))
+    assert rec["ok"] and rec["bizmodel_sha256"]
+    v = js(run("bizmodel.py", "verify", f["drawio"], "--bizmodel", FIX / "sample_bizmodel_small.json"))
+    assert v["ok"], v
+    tbl = run("bizmodel.py", "table", FIX / "sample_bizmodel_small.json", "--data", FIX / "sample_jgaap_loss_fy.json").stdout
+    assert tbl.startswith("<!-- fra:table:bizmodel -->") and "| 製造業の顧客企業 |" in tbl
+    assert "取引関係" not in tbl and "機械の稼働データ" not in tbl, "取引関係の表はノートに載せない（JSON に残す）"
+    return {"size": f["size"], "crossings": f["verify"]["n_crossings"]}
+
+
+@test
+def bizmodel_verify_detects_tampering():
+    out = TMP / "bm_small"
+    if not (out / "T_BM.drawio").exists():
+        run("bizmodel.py", "build", FIX / "sample_bizmodel_small.json", "--data", FIX / "sample_jgaap_loss_fy.json",
+            "--out-dir", out, "--prefix", "T")
+    src = (out / "T_BM.drawio").read_text(encoding="utf-8")
+    bmf = FIX / "sample_bizmodel_small.json"
+    # 1) 矢印の向きを逆にする
+    t = src.replace('source="n-parts" target="n-self"', 'source="n-self" target="n-parts"', 1)
+    assert t != src
+    (out / "X_BM.drawio").write_text(t, encoding="utf-8")
+    v1 = js(run("bizmodel.py", "verify", out / "X_BM.drawio", "--bizmodel", bmf, ok_codes=(1,)))
+    assert any("向き" in e for e in v1["errors"]), v1["errors"]
+    # 2) 主体を別の主体に重ねる
+    import xml.etree.ElementTree as ET
+    root = ET.fromstring(src)
+    geo = {o.get("fra_node"): o.find("mxCell/mxGeometry") for o in root.iter("object") if o.get("fra_node")}
+    geo["dealer"].set("x", geo["maker"].get("x"))
+    geo["dealer"].set("y", geo["maker"].get("y"))
+    (out / "X_BM.drawio").write_text(ET.tostring(root, encoding="unicode"), encoding="utf-8")
+    v2 = js(run("bizmodel.py", "verify", out / "X_BM.drawio", "--bizmodel", bmf, ok_codes=(1,)))
+    assert any("重なっている" in e for e in v2["errors"]), v2["errors"]
+    # 3) 外部画像のアイコン
+    t = re.sub(r"image=data:image/svg\+xml,[A-Za-z0-9+/=]+", "image=https://example.com/a.png", src, count=1)
+    (out / "X_BM.drawio").write_text(t, encoding="utf-8")
+    v3 = js(run("bizmodel.py", "verify", out / "X_BM.drawio", "--bizmodel", bmf, ok_codes=(1,)))
+    assert any("外部画像" in e for e in v3["errors"]), v3["errors"]
+    # 4) 関係の矢印を消す
+    t = re.sub(r'<object id="e3".*?</object>', "", src, count=1, flags=re.S)
+    (out / "X_BM.drawio").write_text(t, encoding="utf-8")
+    v4 = js(run("bizmodel.py", "verify", out / "X_BM.drawio", "--bizmodel", bmf, ok_codes=(1,)))
+    assert any("関係 3" in e and "ない" in e for e in v4["errors"]), v4["errors"]
+    return {"detected": 4}
+
+
+@test
+def bizmodel_large_split_and_rebuild():
+    out = TMP / "bm_large"
+    r = js(run("bizmodel.py", "build", FIX / "sample_bizmodel_large.json", "--out-dir", out, "--prefix", "L"))
+    assert r["ok"], r
+    figs = {f["figure"]: f for f in r["figures"]}
+    assert set(figs) == {"BM", "BM-ec", "BM-ads", "BM-pay"}, list(figs)
+    bm = bm_fixture("sample_bizmodel_large.json")
+    covered = set()
+    for f in figs.values():
+        assert f["verify"]["ok"], (f["figure"], f["verify"]["errors"])
+        assert len(f["nodes"]) <= 10 and len(f["edges"]) <= 16
+        _, _, edges = _drawio_edges(f["drawio"])
+        assert set(edges) == set(f["edges"])
+        for num, o in edges.items():
+            assert o.get("label").startswith(chr(0x2460 + num - 1)), "番号は全体で共通"
+        covered |= set(f["edges"])
+    assert covered == set(range(1, len(bm["edges"]) + 1)), "すべての関係がどれかの図に入る"
+    # 再分析：決済事業をなくすと 1 枚に収まり、前回の事業別の図は削除される
+    drop = {n["id"] for n in bm["nodes"] if "pay" in (n.get("groups") or [])}
+    bm["groups"] = [g for g in bm["groups"] if g["id"] != "pay"]
+    bm["nodes"] = [n for n in bm["nodes"] if n["id"] not in drop]
+    bm["edges"] = [e for e in bm["edges"] if e["from"] not in drop and e["to"] not in drop]
+    pth = write_json(TMP / "bm_large_src" / "L.json", bm)
+    r2 = js(run("bizmodel.py", "build", pth, "--out-dir", out, "--prefix", "L"))
+    assert r2["ok"] and [f["figure"] for f in r2["figures"]] == ["BM"], r2
+    assert not (out / "L_BM-pay.svg").exists() and not (out / "L_BM-ec.drawio").exists(), "前回の分割図を残さない"
+    return {"split": sorted(figs), "after": [f["figure"] for f in r2["figures"]]}
+
+
+@test
+def bizmodel_layout_few_and_many_nodes():
+    base = {"schema": "fra-bizmodel", "schema_version": 1, "sample": True, "draft": False,
+            "company": {"name": "サンプル配置株式会社（架空）", "code": "0002"}, "period": "2026年3月期_本決算",
+            "model_type": "btob_saas", "layout": {"split": "auto"}, "groups": [],
+            "sources": [{"id": "S1", "title": "【サンプル】架空の資料", "url": "https://example.com/x.pdf", "published": "2026-05-01"}]}
+    few = dict(base, nodes=[
+        {"id": "self", "name": "当社（架空）", "type": "company", "role": "self", "description": "x", "source": "S1 p.1"},
+        {"id": "c", "name": "法人顧客", "type": "company", "role": "customer", "description": "x", "source": "S1 p.1"}],
+        edges=[{"from": "self", "to": "c", "type": "service", "label": "クラウドサービス", "source": "S1 p.1", "evidence_level": "fact"},
+               {"from": "c", "to": "self", "type": "money", "label": "月額利用料", "source": "S1 p.1", "evidence_level": "fact"}])
+    nodes = [{"id": "self", "name": "当社（架空）", "type": "company", "role": "self", "description": "x", "source": "S1 p.1"},
+             {"id": "inv", "name": "金融機関", "type": "financial", "role": "investor", "description": "x", "source": "S1 p.1"},
+             {"id": "ch", "name": "販売パートナー", "type": "company", "role": "channel", "description": "x", "source": "S1 p.1"}]
+    edges = [{"from": "inv", "to": "self", "type": "money", "label": "借入金", "source": "S1 p.1", "evidence_level": "fact"},
+             {"from": "self", "to": "ch", "type": "service", "label": "製品の卸売", "source": "S1 p.1", "evidence_level": "fact"}]
+    for i, (nm, tp) in enumerate([("データセンター", "cloud"), ("開発委託先", "company"), ("部材の仕入先", "factory")]):
+        nodes.append({"id": f"s{i}", "name": nm, "type": tp, "role": "supplier", "description": "x", "source": "S1 p.2"})
+        edges += [{"from": f"s{i}", "to": "self", "type": "service", "label": f"{nm}のサービス"[:10], "source": "S1 p.2", "evidence_level": "fact"},
+                  {"from": "self", "to": f"s{i}", "type": "money", "label": "利用料", "source": "S1 p.2", "evidence_level": "interpretation"}]
+    for i, (nm, tp) in enumerate([("中小企業", "company"), ("医療機関", "facility"), ("自治体", "government"), ("個人利用者", "person")]):
+        nodes.append({"id": f"c{i}", "name": nm, "type": tp, "role": "customer", "description": "x", "source": "S1 p.3"})
+        edges.append({"from": "self", "to": f"c{i}", "type": "service", "label": "サービス提供", "source": "S1 p.3", "evidence_level": "fact"})
+        edges.append({"from": f"c{i}", "to": "self", "type": "money", "label": "利用料", "source": "S1 p.3", "evidence_level": "fact"})
+    edges = edges[:16]
+    many = dict(base, nodes=nodes, edges=edges)
+    res = {}
+    for name, obj in (("few", few), ("many", many)):
+        pth = write_json(TMP / "bm_layout" / f"{name}.json", obj)
+        r = js(run("bizmodel.py", "build", pth, "--out-dir", TMP / "bm_layout" / "out", "--prefix", name))
+        assert r["ok"], (name, r.get("error"), [f["verify"]["errors"] for f in r["figures"]])
+        assert len(r["figures"]) == 1 and r["figures"][0]["verify"]["ok"]
+        res[name] = {"size": r["figures"][0]["size"], "crossings": r["figures"][0]["verify"]["n_crossings"]}
+    return res
+
+
+@test
+def bizmodel_layout_holding_company_businesses():
+    """当社（持株会社）が運営する事業が当社と顧客とだけ取引する場合は、当社 → 事業 → 顧客 の列に並び、矢印が交差しない。
+    説明の上を他の矢印が通る箇所は警告として報告される（エラーにはしない）。"""
+    nodes = [{"id": "self", "name": "持株会社（架空）", "type": "company", "role": "self", "description": "x", "source": "S1 p.1"},
+             {"id": "c", "name": "個人顧客", "type": "people", "role": "customer", "description": "x", "source": "S1 p.1"}]
+    edges = []
+    for i, nm in enumerate(["電力事業", "通信事業", "保険事業", "金融事業"]):
+        nodes.append({"id": f"b{i}", "name": nm, "type": "business", "role": "group", "description": "x", "source": "S1 p.2"})
+        edges.append({"from": f"b{i}", "to": "c", "type": "service", "label": f"{nm[:2]}の提供", "source": "S1 p.2", "evidence_level": "fact"})
+    for i in range(4):
+        edges.append({"from": "self", "to": f"b{i}", "type": "operation", "label": "経営管理", "source": "S1 p.1", "evidence_level": "fact"})
+    obj = {"schema": "fra-bizmodel", "schema_version": 1, "sample": True, "draft": False,
+           "company": {"name": "サンプル持株会社（架空）", "code": "0003"}, "period": "2026年3月期_本決算",
+           "model_type": "other", "layout": {"split": "auto"}, "groups": [], "nodes": nodes, "edges": edges,
+           "sources": [{"id": "S1", "title": "【サンプル】架空の資料", "url": "https://example.com/x.pdf", "published": "2026-05-01"}]}
+    pth = write_json(TMP / "bm_holding" / "h.json", obj)
+    r = js(run("bizmodel.py", "build", pth, "--out-dir", TMP / "bm_holding" / "out", "--prefix", "h"))
+    f = r["figures"][0]
+    assert r["ok"] and f["verify"]["ok"], f["verify"]
+    assert f["verify"]["n_crossings"] == 0, f["verify"]
+    root, nodes_x, _ = _drawio_edges(f["drawio"])
+    x = {o.get("fra_node"): float(o.find("mxCell/mxGeometry").get("x")) for o in nodes_x.values()}
+    assert x["self"] < min(x[f"b{i}"] for i in range(4)) and max(x[f"b{i}"] for i in range(4)) < x["c"], x
+    assert all(isinstance(w, str) for w in f["verify"]["warnings"])
+    return {"size": f["size"], "warnings": f["verify"]["warnings"]}
+
+
+@test
+def bizmodel_failure_recorded_and_reported():
+    out = TMP / "bm_fail"
+    b = bm_fixture(); b["edges"][0]["to"] = "nobody"
+    pth = write_json(TMP / "bm_fail_src" / "F.json", b)
+    r = js(run("bizmodel.py", "build", pth, "--out-dir", out, "--prefix", "F", ok_codes=(1,)))
+    rec = json.loads((out / "F_BM_figures.json").read_text(encoding="utf-8"))
+    assert not r["ok"] and rec["stage"] == "validate" and "存在しない主体" in rec["error"], rec
+    # 財務諸表の図は、ビジネスモデル JSON が誤っていても作られる
+    if not (VAULT / ".obsidian").exists():
+        setup_env()
+    note, dj, cd = make_note("0000", "サンプル赤字工業株式会社（架空）", "sample_jgaap_loss_fy.json", "2026年3月期_本決算")
+    run("obsidian.py", "upsert", "--note", note, "--body", TMP / "body.md", "--frontmatter", TMP / "fm.json", "--force")
+    c0 = js(run("check_report.py", "--note", note, "--data", dj, "--vault", VAULT))
+    assert c0["ok"] and not c0["warnings"], c0
+    # 生成に失敗した記録（検証・書き出しの失敗）は警告にとどめる
+    recp = cd / "assets" / "2026年3月期_本決算_BM_figures.json"
+    good = recp.read_text(encoding="utf-8")
+    bad = json.loads(good)
+    bad.update({"ok": False, "stage": "verify", "error": "ValueError: 図の検証エラー（テスト）"})
+    recp.write_text(json.dumps(bad, ensure_ascii=False), encoding="utf-8")
+    c1 = js(run("check_report.py", "--note", note, "--data", dj, "--vault", VAULT))
+    assert c1["ok"] and any("生成に失敗" in w for w in c1["warnings"]), c1
+    recp.write_text(good, encoding="utf-8")
+    # ビジネスモデル JSON がない・表を書き換えた場合はエラー
+    bmj = cd / "data" / "bizmodel" / "2026年3月期_本決算.json"
+    t = note.read_text(encoding="utf-8")
+    assert "| 製造業の顧客企業 |" in t
+    note.write_text(t.replace("| 製造業の顧客企業 |", "| 製造業の顧客 |", 1), encoding="utf-8")
+    c2 = js(run("check_report.py", "--note", note, "--data", dj, "--vault", VAULT, ok_codes=(1,)))
+    assert any("fra:table:bizmodel" in e for e in c2["errors"]), c2["errors"]
+    note.write_text(t, encoding="utf-8")
+    bmj.rename(bmj.with_suffix(".bak"))
+    c3 = js(run("check_report.py", "--note", note, "--data", dj, "--vault", VAULT, ok_codes=(1,)))
+    bmj.with_suffix(".bak").rename(bmj)
+    assert any("ビジネスモデル JSON" in e and "がない" in e for e in c3["errors"]), c3["errors"]
+    return {"warning": True}
+
+
+@test
+def bizmodel_obsidian_overview_and_reanalysis():
+    if not (VAULT / ".obsidian").exists():
+        setup_env()
+    period = "2026年3月期_本決算"
+    note, dj, cd = make_note("0000", "サンプル赤字工業株式会社（架空）", "sample_jgaap_loss_fy.json", period)
+    run("obsidian.py", "upsert", "--note", note, "--body", TMP / "body.md", "--frontmatter", TMP / "fm.json", "--force")
+    ov = cd / "企業概要.md"
+    ov.write_text(ov.read_text(encoding="utf-8") + "\n企業概要への利用者のメモ\n", encoding="utf-8")
+    run("obsidian.py", "relink", "--code", "0000")
+    t = ov.read_text(encoding="utf-8")
+    latest = sorted(x.stem for x in cd.glob("*.md") if x.stem != "企業概要")[-1]
+    assert "<!-- fra:bm:start -->" in t and f"{latest}_BM.svg|" in t, "企業概要に最新の決算期の全社概要図を置く"
+    assert t.index("<!-- fra:bm:start -->") < t.index("<!-- fra:list:start -->") < t.index("企業概要への利用者のメモ")
+    run("obsidian.py", "relink", "--code", "0000")
+    assert ov.read_text(encoding="utf-8").count("<!-- fra:bm:start -->") == 1, "再実行でブロックを重複させない"
+    # 再分析：関係の説明（図）と主体の説明（表）を変えて図と表を更新する
+    bmj = cd / "data" / "bizmodel" / f"{period}.json"
+    bm = json.loads(bmj.read_text(encoding="utf-8"))
+    bm["edges"][0]["label"] = "部品の継続供給"
+    bm["nodes"][1]["description"] += "（再分析で更新）"
+    write_json(bmj, bm)
+    c = js(run("check_report.py", "--note", note, "--data", dj, "--vault", VAULT, ok_codes=(1,)))
+    assert any("更新前" in e for e in c["errors"]), "JSON 更新後の古い図を検出"
+    r = js(run("diagrams.py", "build", dj, "--out-dir", cd / "assets", "--prefix", period))
+    assert r["ok"] and r["bizmodel"]["ok"], r["bizmodel"]
+    assert "部品の継続供給" in (cd / "assets" / f"{period}_BM.svg").read_text(encoding="utf-8")
+    rt = js(run("obsidian.py", "refresh-tables", "--note", note, "--data", dj))
+    assert rt["action"] == "updated" and "bizmodel" in rt["tables_changed"], rt
+    c2 = js(run("check_report.py", "--note", note, "--data", dj, "--vault", VAULT))
+    assert c2["ok"] and not c2["warnings"], c2
+    assert "企業概要への利用者のメモ" in ov.read_text(encoding="utf-8")
+    emb = run("obsidian.py", "embeds", "--code", "0000", "--period", period, "--kind", "BM").stdout
+    assert "<!-- fra:fig:BM -->" in emb and "ビジネスモデル（全社概要）" in emb
+    return {"overview_block": True}
 
 
 @test

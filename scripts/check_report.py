@@ -3,6 +3,8 @@
 
 1. fra:table ブロックが、データ JSON から再生成した表と一致するか
 2. 図（SVG）の埋め込みが存在し、ファイルがあるか。CF 未開示なら CF 図がないことを確認
+   ビジネスモデル：data/bizmodel/<決算期>.json の検証、図（BM・BM-<事業>）の埋め込み、主体の表（fra:table:bizmodel）の照合。
+   図の生成に失敗した記録（<決算期>_BM_figures.json の ok=false）は警告にとどめる
 3. 図の数値（<prefix>_figures.json）とデータ JSON の値が一致するか
 4. 本文中の金額（兆円・億円・百万円・千円）と比率（%）が、データ・計算指標のどれかと一致するか
    一致しないものは警告として列挙する（出典つきで data.extra に登録するか、本文を直す）
@@ -342,6 +344,53 @@ def strip_tables(text: str) -> str:
     return re.sub(r"<!-- fra:nocheck -->.*?<!-- /fra:nocheck -->", "", text, flags=re.S)
 
 
+def check_bizmodel(note: Path, data: Path, d: dict, period: str, auto: str, found: dict, embeds: list,
+                   errs: list, warns: list) -> None:
+    """ビジネスモデル JSON（data/bizmodel/<決算期>.json）の検証、図の生成記録と埋め込み、主体の表の照合。
+    図の生成に失敗した記録がある場合は警告にとどめる（財務分析は続行できる。原因は利用者に報告する）。"""
+    import hashlib
+    from bizmodel import load_json as bm_load, table as bm_table, validate as bm_validate
+    bm_path = data.parent / "bizmodel" / f"{period}.json"
+    if not bm_path.exists():
+        errs.append(f"ビジネスモデル JSON（data/bizmodel/{period}.json）がない（bizmodel.py init で作成し、主体と取引関係を資料から記入する）")
+        return
+    bm = bm_load(bm_path)
+    bv = bm_validate(bm, d)
+    errs += [f"ビジネスモデル JSON：{x}" for x in bv["errors"]]
+    if bm.get("draft"):
+        errs.append("ビジネスモデル JSON が draft=true のまま（レビュー未完了）")
+    for s in bm.get("sources") or []:
+        if s.get("url") and s["url"] not in auto:
+            errs.append(f"ビジネスモデルの出典 {s.get('id')} の URL が本文の出典一覧にない: {s['url']}")
+    if bv["ok"]:
+        if "bizmodel" not in found:
+            errs.append("表 fra:table:bizmodel が本文にない（bizmodel.py table の出力を「ビジネスモデル」の章に貼る）")
+        elif found["bizmodel"].strip() != bm_table(bm).strip():
+            errs.append("表 fra:table:bizmodel がビジネスモデル JSON から再生成した内容と一致しない（手で書き換えていないか）")
+    rec = note.parent / "assets" / f"{period}_BM_figures.json"
+    if not rec.exists():
+        errs.append("ビジネスモデル図がない（diagrams.py build または bizmodel.py build を実行する）")
+        return
+    r = json.loads(rec.read_text(encoding="utf-8"))
+    if r.get("bizmodel_sha256") != hashlib.sha256(bm_path.read_bytes()).hexdigest():
+        errs.append("ビジネスモデル図が JSON の更新前に作られている（diagrams.py build を再実行する）")
+    if not r.get("ok"):
+        warns.append(f"ビジネスモデル図の生成に失敗した（段階：{r.get('stage')}、原因：{r.get('error')}）。"
+                     "財務分析は続行できるが、原因を利用者に報告すること")
+        return
+    m = re.search(r"^#{2,3}\s+[^\n]*ビジネスモデル[^\n]*$", auto, re.M)
+    sec = ""
+    if m:
+        nxt = re.search(r"^##\s", auto[m.end():], re.M)
+        sec = auto[m.end(): m.end() + nxt.start()] if nxt else auto[m.end():]
+    for f in r.get("figures", []):
+        name = f"{period}_{f['figure']}.svg"
+        if not any(e.endswith(name) for e in embeds):
+            errs.append(f"ビジネスモデル図（{name}）が埋め込まれていない（obsidian.py embeds --kind BM）")
+        elif name not in sec:
+            warns.append(f"ビジネスモデル図（{name}）が「ビジネスモデル」の章の外にある")
+
+
 def check(note: Path, data: Path, vault: Path | None) -> dict:
     errs, warns = [], []
     d = load(data)
@@ -409,6 +458,8 @@ def check(note: Path, data: Path, vault: Path | None) -> dict:
                 errs.append(f"{f['figure']} 図の検証エラー: {f['verify']['errors'][:3]}")
     else:
         warns.append(f"{figs.name} がない（diagrams.py build の結果を保存すること）")
+    # ---- ビジネスモデル（JSON・図・表）
+    check_bizmodel(note, data, d, period, auto, found, embeds, errs, warns)
     # ---- 本文の数値
     body = strip_tables(auto)
     body = re.sub(r"!\[\[[^\]]+\]\]", "", body)

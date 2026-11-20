@@ -1,0 +1,379 @@
+{
+ "schema": "fra-bizmodel",
+ "schema_version": 1,
+ "sample": true,
+ "draft": false,
+ "company": {
+  "name": "サンプル多角化株式会社（架空）",
+  "short_name": "サンプル多角化（架空）",
+  "code": "0001"
+ },
+ "period": "2026年3月期_本決算",
+ "model_type": "marketplace",
+ "layout": {
+  "split": "auto"
+ },
+ "sources": [
+  {
+   "id": "S1",
+   "title": "【サンプル】架空の有価証券報告書",
+   "url": "https://example.com/sample-yuho.pdf",
+   "published": "2026-06-20",
+   "kind": "サンプル"
+  },
+  {
+   "id": "S2",
+   "title": "【サンプル】架空の決算説明資料",
+   "url": "https://example.com/sample-presentation2.pdf",
+   "published": "2026-05-12",
+   "kind": "サンプル"
+  }
+ ],
+ "groups": [
+  {
+   "id": "ec",
+   "name": "EC事業",
+   "segment": "EC事業"
+  },
+  {
+   "id": "ads",
+   "name": "広告事業",
+   "segment": "広告事業"
+  },
+  {
+   "id": "pay",
+   "name": "決済事業",
+   "segment": "決済事業"
+  }
+ ],
+ "nodes": [
+  {
+   "id": "self",
+   "name": "サンプル多角化（架空）",
+   "type": "company",
+   "role": "self",
+   "description": "3つの事業を営む持株会社（架空）",
+   "source": "S1 p.5"
+  },
+  {
+   "id": "parent",
+   "name": "親会社",
+   "type": "company",
+   "role": "investor",
+   "description": "議決権の過半を持つ親会社",
+   "source": "S1 p.8"
+  },
+  {
+   "id": "ec_unit",
+   "name": "EC事業",
+   "type": "business",
+   "role": "group",
+   "groups": [
+    "ec"
+   ],
+   "description": "オンラインモールの運営",
+   "source": "S1 p.6"
+  },
+  {
+   "id": "ads_unit",
+   "name": "広告事業",
+   "type": "business",
+   "role": "group",
+   "groups": [
+    "ads"
+   ],
+   "description": "モール内の広告枠の販売",
+   "source": "S1 p.6"
+  },
+  {
+   "id": "pay_unit",
+   "name": "決済事業",
+   "type": "business",
+   "role": "group",
+   "groups": [
+    "pay"
+   ],
+   "description": "加盟店向けの決済サービス",
+   "source": "S1 p.7"
+  },
+  {
+   "id": "seller",
+   "name": "出店者",
+   "type": "store",
+   "role": "supplier",
+   "groups": [
+    "ec"
+   ],
+   "description": "モールに出店する事業者",
+   "source": "S2 p.4"
+  },
+  {
+   "id": "buyer",
+   "name": "購入者",
+   "type": "people",
+   "role": "customer",
+   "groups": [
+    "ec"
+   ],
+   "description": "モールで商品を買う個人",
+   "source": "S2 p.4"
+  },
+  {
+   "id": "courier",
+   "name": "配送会社",
+   "type": "company",
+   "role": "partner",
+   "groups": [
+    "ec"
+   ],
+   "description": "商品の配送を行う会社（社名の記載なし）",
+   "source": "S2 p.5"
+  },
+  {
+   "id": "advertiser",
+   "name": "広告主",
+   "type": "company",
+   "role": "customer",
+   "groups": [
+    "ads"
+   ],
+   "description": "広告を出す出店者・メーカー",
+   "source": "S2 p.7"
+  },
+  {
+   "id": "agency",
+   "name": "広告代理店",
+   "type": "company",
+   "role": "channel",
+   "groups": [
+    "ads"
+   ],
+   "description": "広告主から広告を受注する代理店",
+   "source": "S2 p.7"
+  },
+  {
+   "id": "merchant",
+   "name": "加盟店",
+   "type": "store",
+   "role": "customer",
+   "groups": [
+    "pay"
+   ],
+   "description": "決済サービスを導入する店舗",
+   "source": "S2 p.9"
+  },
+  {
+   "id": "card",
+   "name": "カード会社",
+   "type": "financial",
+   "role": "partner",
+   "groups": [
+    "pay"
+   ],
+   "description": "カード決済の処理を行う会社",
+   "source": "S2 p.9"
+  },
+  {
+   "id": "user",
+   "name": "店舗の利用者",
+   "type": "person",
+   "role": "end_user",
+   "groups": [
+    "pay"
+   ],
+   "description": "加盟店で支払う個人",
+   "source": "S2 p.9"
+  }
+ ],
+ "edges": [
+  {
+   "from": "parent",
+   "to": "self",
+   "type": "ownership",
+   "label": "出資（議決権の過半）",
+   "source": "S1 p.8",
+   "evidence_level": "fact"
+  },
+  {
+   "from": "self",
+   "to": "ec_unit",
+   "type": "operation",
+   "label": "EC事業の運営",
+   "source": "S1 p.6",
+   "evidence_level": "fact"
+  },
+  {
+   "from": "self",
+   "to": "ads_unit",
+   "type": "operation",
+   "label": "広告事業の運営",
+   "source": "S1 p.6",
+   "evidence_level": "fact"
+  },
+  {
+   "from": "self",
+   "to": "pay_unit",
+   "type": "operation",
+   "label": "決済事業の運営",
+   "source": "S1 p.7",
+   "evidence_level": "fact"
+  },
+  {
+   "from": "ec_unit",
+   "to": "seller",
+   "type": "service",
+   "label": "出店サービス",
+   "source": "S2 p.4",
+   "evidence_level": "fact",
+   "group": "ec"
+  },
+  {
+   "from": "seller",
+   "to": "ec_unit",
+   "type": "money",
+   "label": "出店料・販売手数料",
+   "source": "S2 p.4",
+   "evidence_level": "fact",
+   "group": "ec",
+   "overview": true
+  },
+  {
+   "from": "seller",
+   "to": "buyer",
+   "type": "service",
+   "label": "商品の販売",
+   "source": "S2 p.4",
+   "evidence_level": "fact",
+   "group": "ec"
+  },
+  {
+   "from": "buyer",
+   "to": "seller",
+   "type": "money",
+   "label": "商品代金",
+   "source": "S2 p.4",
+   "evidence_level": "interpretation",
+   "group": "ec",
+   "note": "出店者が販売者であるとの記載から"
+  },
+  {
+   "from": "courier",
+   "to": "buyer",
+   "type": "service",
+   "label": "配送",
+   "source": "S2 p.5",
+   "evidence_level": "fact",
+   "group": "ec"
+  },
+  {
+   "from": "seller",
+   "to": "courier",
+   "type": "money",
+   "label": "配送料",
+   "source": "S2 p.5",
+   "evidence_level": "interpretation",
+   "group": "ec",
+   "note": "出店者が配送を手配するとの記載から"
+  },
+  {
+   "from": "ec_unit",
+   "to": "buyer",
+   "type": "information",
+   "label": "商品情報・レビュー",
+   "source": "S2 p.4",
+   "evidence_level": "interpretation",
+   "group": "ec",
+   "note": "モールの機能説明から"
+  },
+  {
+   "from": "ads_unit",
+   "to": "advertiser",
+   "type": "service",
+   "label": "広告枠の提供",
+   "source": "S2 p.7",
+   "evidence_level": "fact",
+   "group": "ads",
+   "overview": true
+  },
+  {
+   "from": "advertiser",
+   "to": "agency",
+   "type": "money",
+   "label": "広告費",
+   "source": "S2 p.7",
+   "evidence_level": "fact",
+   "group": "ads"
+  },
+  {
+   "from": "agency",
+   "to": "ads_unit",
+   "type": "money",
+   "label": "広告費（手数料控除後）",
+   "source": "S2 p.7",
+   "evidence_level": "interpretation",
+   "group": "ads",
+   "note": "代理店経由の販売との記載から"
+  },
+  {
+   "from": "ads_unit",
+   "to": "agency",
+   "type": "information",
+   "label": "配信実績データ",
+   "source": "S2 p.7",
+   "evidence_level": "hypothesis",
+   "group": "ads",
+   "note": "効果測定の提供との記載から推測"
+  },
+  {
+   "from": "pay_unit",
+   "to": "merchant",
+   "type": "service",
+   "label": "決済サービス",
+   "source": "S2 p.9",
+   "evidence_level": "fact",
+   "group": "pay"
+  },
+  {
+   "from": "merchant",
+   "to": "pay_unit",
+   "type": "money",
+   "label": "決済手数料",
+   "source": "S2 p.9",
+   "evidence_level": "fact",
+   "group": "pay",
+   "overview": true
+  },
+  {
+   "from": "card",
+   "to": "pay_unit",
+   "type": "service",
+   "label": "カード決済の処理",
+   "source": "S2 p.9",
+   "evidence_level": "fact",
+   "group": "pay"
+  },
+  {
+   "from": "pay_unit",
+   "to": "card",
+   "type": "money",
+   "label": "処理手数料",
+   "source": "S2 p.9",
+   "evidence_level": "interpretation",
+   "group": "pay",
+   "note": "処理の委託との記載から"
+  },
+  {
+   "from": "user",
+   "to": "merchant",
+   "type": "money",
+   "label": "代金（カード払い）",
+   "source": "S2 p.9",
+   "evidence_level": "interpretation",
+   "group": "pay",
+   "note": "加盟店の利用者が支払うとの記載から"
+  }
+ ],
+ "notes": [
+  "サンプルデータ（架空）"
+ ]
+}

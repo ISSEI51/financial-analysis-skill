@@ -7,6 +7,7 @@
 
 使い方:
   python3 -I diagrams.py build  <data.json> --out-dir <assets_dir> [--prefix 2026年3月期_本決算] [--png]
+      （<data.json と同じフォルダ>/bizmodel/<prefix>.json があれば、ビジネスモデル図も bizmodel.py で作る）
   python3 -I diagrams.py verify <assets_dir>/<prefix>_PL.drawio [...]
 
 出力: JSON（生成ファイル、図中の数値、検証結果）
@@ -781,7 +782,10 @@ def build_cf(d: dict) -> Canvas:
     if cf.get("disclosed") is False:
         raise ValueError("CF 未開示")
     B, E = D(cf["begin"]["value"]), D(cf["end"]["value"])
-    flows = [ln for ln in cf["lines"] if not ln.get("parent") and ln.get("kind") != "info"]
+    tops = [ln for ln in cf["lines"] if not ln.get("parent") and ln.get("kind") != "info"]
+    # 原資料で「－」と表示された行（XBRL の nil。換算差額など）は該当なしとして棒を描かない（0 で補完しない）
+    nil_tops = [ln for ln in tops if ln.get("value") is None and "value" in (ln.get("nil_fields") or [])]
+    flows = [ln for ln in tops if ln not in nil_tops]
     if B is None or E is None or any(D(ln.get("value")) is None for ln in flows):
         raise ValueError("期首・期末残高または CF の主要項目が未開示")
     seq = [("bal", cf["begin"].get("label", "期首残高"), B, Decimal(0), B)]
@@ -872,6 +876,8 @@ def build_cf(d: dict) -> Canvas:
         displayed.append(("フリーキャッシュフロー", ctx.amt(fcf)))
     chk = f"照合：期首 {ctx.amt(B)} ＋ 各増減の合計 {ctx.amt(run - B)} ＝ {ctx.amt(run)}（開示された期末残高 {ctx.amt(E)}、差 {fmt_num(diff)} {ctx.su}）"
     extra.append(chk)
+    if nil_tops:
+        extra.append("原資料で「－」（該当なし）の項目は棒を描いていない：" + "、".join(ln["label"] for ln in nil_tops))
     if cf.get("cash_reconciliation_note"):
         extra.append(cf["cash_reconciliation_note"])
     extra.append("緑＝現金の増加、赤い破線＝現金の減少、青＝残高。棒の高さは金額に比例。")
@@ -1234,6 +1240,18 @@ def build(data_path: str, out_dir: str, prefix: str | None, png: bool) -> dict:
                                "png": str(p.with_suffix(".png")) if png else None, "size": [cv.w, round(cv.h)],
                                "verify": v, "values": [{"label": a, "display": b} for a, b in cv.displayed],
                                "cf_end_diff": str(getattr(cv, "cf_diff", "")) or None})
+    # ビジネスモデル図：<data_dir>/bizmodel/<prefix>.json があれば作る。失敗は res["bizmodel"] に記録し、
+    # 財務諸表の図の ok には含めない（財務分析を続行できるようにする）
+    bm_path = Path(data_path).parent / "bizmodel" / f"{prefix}.json"
+    if bm_path.exists():
+        from bizmodel import build as bm_build
+        r = bm_build(str(bm_path), str(out), prefix, data_path, png)
+        res["bizmodel"] = {"ok": r["ok"], "stage": r.get("stage"), "error": r.get("error"), "record": r.get("record"),
+                           "figures": [{"figure": f["figure"], "title": f["title"], "svg": f["svg"],
+                                        "verify_ok": f["verify"]["ok"], "errors": f["verify"]["errors"][:5]}
+                                       for f in r.get("figures", [])]}
+    else:
+        res["bizmodel"] = {"ok": None, "skipped": f"ビジネスモデル JSON がない（{bm_path.name}。bizmodel.py init で作成）"}
     import hashlib
     res["version"] = VERSION
     res["data"] = str(Path(data_path))
