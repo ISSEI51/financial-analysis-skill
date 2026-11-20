@@ -1,6 +1,6 @@
 ---
 name: financial-report-analyzer
-description: 上場企業の決算資料（決算短信・決算説明資料・有価証券報告書）を一次資料から取得・解析し、財務三表（PL・BS・CF）を数値に比例した draw.io 図（.drawio と SVG）で図解し、ビジネスモデルと7つの観点（ビジネスモデル・収益性・成長性・安全性・効率性・将来性・リスク）を【事実】【解釈】【仮説】に分けて分析したノートを Obsidian の「決算分析」フォルダに蓄積する。企業名・証券コード・決算資料URL・PDF・対象決算期・「最新決算」から起動し、同じ決算期は重複させず更新、過去決算との比較も行う。
+description: 上場企業の決算資料（決算短信・決算説明資料・有価証券報告書）を一次資料から取得・解析し、財務三表（PL・BS・CF）を数値に比例した draw.io 図（.drawio と SVG）で図解し、企業・顧客・取引先とお金・商品・情報の流れを出典つきのビジネスモデル図で示し、ビジネスモデルと7つの観点（ビジネスモデル・収益性・成長性・安全性・効率性・将来性・リスク）を【事実】【解釈】【仮説】に分けて分析したノートを Obsidian の「決算分析」フォルダに蓄積する。企業名・証券コード・決算資料URL・PDF・対象決算期・「最新決算」から起動し、同じ決算期は重複させず更新、過去決算との比較も行う。
 when_to_use: 「〇〇の決算を分析して」「7974 の最新決算をまとめて」「この決算短信PDFを読んで」「財務三表を図解して」「決算をObsidianに記録して」「前回決算から何が変わった？」など、上場企業の決算・財務諸表の分析を依頼されたとき。/financial-report-analyzer で明示的にも実行できる。
 argument-hint: "[企業名|証券コード|資料URL|PDFパス] [対象決算期（省略時は最新）]"
 allowed-tools:
@@ -24,6 +24,7 @@ allowed-tools:
 - データ形式：[references/data-schema.md](references/data-schema.md)
 - ノートの構成：[references/report-template.md](references/report-template.md)
 - 図のルール：[references/diagram-rules.md](references/diagram-rules.md)
+- ビジネスモデル図のルール：[references/bizmodel-rules.md](references/bizmodel-rules.md)（主体と取引関係の抽出、JSON 形式、配置、検証）
 
 スクリプトは `${CLAUDE_SKILL_DIR}/scripts/` にあり、すべて標準ライブラリだけで動く（PDF は poppler の pdftotext、図の書き出しは draw.io Desktop）。
 実行は `python3 -I ${CLAUDE_SKILL_DIR}/scripts/<name>.py …`。出力は JSON。以下 `S=${CLAUDE_SKILL_DIR}/scripts` と書く。
@@ -36,6 +37,7 @@ allowed-tools:
 - 連結と単体、累計と単独四半期、異なる会計基準の数値を断りなく混ぜない。
 - CF 計算書がない期は CF を作らない。図も作らない。
 - 図は diagrams.py で数値から生成する（画像生成 AI で代替しない）。
+- ビジネスモデル図は**すべての分析で作る**。主体と取引関係は資料で確認したものだけを書き、すべてに出典を付ける。個別の取引先名が資料になければ一般名称（「販売代理店」など）にする。資料からの推測は `evidence_level: hypothesis` にして根拠を書く（図に［仮説］と表示される）。業種の一般的な形から関係を補わない。
 - 利用者が追記したメモを消さない（obsidian.py upsert が自動生成部分だけを更新する。中止されたら従う）。
 - サンプルデータを使うときは `sample: true` にし、実企業の分析と混同させない。
 
@@ -66,6 +68,7 @@ python3 -I $S/obsidian.py detect
 - 直近約1か月の開示：`python3 -I $S/tdnet.py search --code <コード> --title "決算短信|説明|補足"` → `tdnet.py download --url <pdf/xbrl> --code <コード> --period <ラベル>`。
 - それより古い資料：企業 IR サイトの IR ライブラリを WebFetch して PDF の URL を見つけ、`fetch.py <URL> --code … --period …`。有報・半期報告書は IR サイトの PDF か、`EDINET_API_KEY` があれば `edinet.py`。
 - 最低限そろえる：決算短信（数値の一次資料）。可能なら決算説明資料（事業の説明・KPI）、有報（事業内容・リスク・セグメント詳細）、中期経営計画。
+- ビジネスモデル図のために、有報の「事業の内容」「事業系統図」、説明資料のサービス・料金体系・販売経路の説明、企業公式サイトのサービス紹介も確認する（[bizmodel-rules.md](references/bizmodel-rules.md) の 1）。
 - 各資料の「資料名・URL・公表日・対象期間・会計基準・連結/単体・単位」を確認する。訂正開示があれば訂正後を使う。
 
 ### 3. 本文と数値を読む
@@ -85,6 +88,18 @@ python3 -I $S/obsidian.py detect
   XBRL に値がない欄（PDF で「－」なら `nil_fields`、空欄なら null のまま）、会社予想（修正があれば `forecast.previous`）、本文で使う KPI（`extra`）、一時的な損益の `one_off`、`cf.cash_reconciliation_note`、`sources` の追加、最後に `draft: false`。
 - XBRL がない場合（IR サイトの PDF など）は、PDF の表から同じ形式で手入力する。転記後は必ず次の validate で照合する。
 - 業種特有の科目は名称を変えずに入れる。
+
+### 4b. ビジネスモデル JSON を作る（必須。[bizmodel-rules.md](references/bizmodel-rules.md)）
+
+```bash
+python3 -I $S/bizmodel.py init --data <data_dir>/<ラベル>.json --out <data_dir>/bizmodel/<ラベル>.json   # 下書き（再分析なら既存を編集）
+python3 -I $S/bizmodel.py validate <data_dir>/bizmodel/<ラベル>.json
+```
+- 主体（nodes：`type`＝アイコン、`role`＝位置、`description`、`source`）と取引関係（edges：`from`→`to` は流れの向き、`type`、`label`、`evidence_level`、`source`）を資料から記入する。
+- 財務データ JSON の出典（S1 など）はそのまま参照できる。有報・企業サイトなど新しい資料は bizmodel の `sources` に追加する。
+- `model_type` を選ぶ（配置にだけ使う。関係は型から決めない）。主体が10・関係が16を超えるなら `groups` と各関係の `group` を設定する（全社概要図と事業別の図に分かれる）。
+- `validate` の `errors` が空になるまで直し、`draft: false` にする。`warnings`（役割と向きの不整合、長い説明など）も確認する。
+- 前回の決算期のビジネスモデル JSON があれば、それを出発点にして今回の資料で確認し直す（変化があれば更新し、確認できなくなった関係は消す）。
 
 ### 5. 検証する
 
@@ -116,10 +131,15 @@ python3 -I $S/diagrams.py build <data.json> --out-dir <company_dir>/assets --pre
 - 目視確認：`--out-dir <scratchpad>` と `--png` で別に出力し、PNG を Read で見る（文字切れ・重なり・余白）。確認後、本番の assets に出力する（PNG は Vault に置かない）。
 - CF 未開示の期は `skipped` に理由が出る。
 - セグメントが2つ以上（単一セグメントなら data の `revenue_breakdown` が2つ以上）あると補助図 SEG（売上高と利益の構成比の円グラフ、金額・構成比・利益率の表付き）も作られる。ビジネスモデルの章に埋め込む。
+- `data/bizmodel/<ラベル>.json` があれば、同じコマンドでビジネスモデル図（`<ラベル>_BM`、分割時は `<ラベル>_BM-<事業>`）も作られる。結果は出力の `bizmodel`（`ok`・`error`・各図の検証）と `<ラベル>_BM_figures.json` に入る。
+  - `bizmodel.ok` が false でも財務諸表の図の `ok` には影響しない。原因（`stage`・`error`）に従って JSON を直して再実行する（[bizmodel-rules.md](references/bizmodel-rules.md) の 6）。直せない場合は、ノートに図を作れなかった原因を書き、利用者に報告して財務分析を続ける。
+  - PNG（`--png`）で、矢印の向き・説明の位置・主体の名前を目視確認する。
 
 ### 8. ノートを書く（[report-template.md](references/report-template.md)、[analysis-guide.md](references/analysis-guide.md)）
 
-1. 図の埋め込みコードを取得：`python3 -I $S/obsidian.py embeds --code <コード> --period <ラベル> [--kind PL]`（章ごとに `--kind` で1つずつ取り出せる）
+1. 図の埋め込みコードを取得：`python3 -I $S/obsidian.py embeds --code <コード> --period <ラベル> [--kind PL]`（章ごとに `--kind` で1つずつ取り出せる。`--kind BM` はビジネスモデル図をすべて）
+   - 「ビジネスモデル」の章に、ビジネスモデル図（`--kind BM`）と主体の表（`python3 -I $S/bizmodel.py table <data_dir>/bizmodel/<ラベル>.json` の出力をそのまま）を貼る。表は check_report.py が JSON から再生成して照合する。
+     取引関係の表と図の説明文は書かない（関係ごとの内容・根拠・出典はビジネスモデル JSON に残す）。図の生成に失敗した場合だけ、その旨と原因を書く。
 2. テンプレートに従って本文（body.md）と frontmatter（fm.json）を scratchpad に書く。
    - 冒頭「3分でわかる決算概要」は数値の羅列ではなく「なぜそうなったか」。
    - 【事実】【解釈】【仮説】を区別し、重要な解釈・仮説には確信度、仮説には検証方法を書く。情報不足は「判断材料不足」。
@@ -132,20 +152,21 @@ python3 -I $S/diagrams.py build <data.json> --out-dir <company_dir>/assets --pre
    ```
    - 終了コード 4（`aborted_manual_edit`）＝自動生成部分が人手で編集されている。上書きせず、利用者に知らせて方針を確認する（追記をメモ欄に移す、または利用者の了承後に `--force`。--force でも元のファイルはバックアップされる）。
 4. 企業概要を更新：**既存の企業概要を Read して内容を引き継ぎ**、本文（テンプレート3）を書き、`upsert --note <company_dir>/企業概要.md` で更新（frontmatter は 会社名・証券コード・業種・tags・`fra_type: company_overview`）。
-5. 相互リンクと一覧を再生成：`python3 -I $S/obsidian.py relink --code <コード>`
-6. データ JSON を後から直した場合や、スクリプトの更新で表の形式が変わった場合は、本文を書き直さずに表だけを更新できる：`python3 -I $S/obsidian.py refresh-tables --note <ノート.md> --data <data.json>`（図は diagrams.py build で作り直す）。
+5. 相互リンクと一覧を再生成：`python3 -I $S/obsidian.py relink --code <コード>`（企業概要には、最新の決算期の全社概要図が `fra:bm` ブロックとして自動で入る。企業概要の本文には埋め込まない）
+6. データ JSON・ビジネスモデル JSON を後から直した場合や、スクリプトの更新で表の形式が変わった場合は、本文を書き直さずに表だけを更新できる：`python3 -I $S/obsidian.py refresh-tables --note <ノート.md> --data <data.json>`（主体の表も対象。図は diagrams.py build で作り直す）。
 
 ### 9. 最終チェック
 
 ```bash
 python3 -I $S/check_report.py --note <ノート.md> --data <data.json> --vault <Vault>
 ```
-- `errors` をすべて直す（表の不一致、図の未埋め込み、必須の章、出典 URL の記載漏れ、draft のまま等）。
+- `errors` をすべて直す（表の不一致、図の未埋め込み、必須の章、出典 URL の記載漏れ、draft のまま、ビジネスモデル JSON・図・主体の表の不足や不一致等）。
+- 「ビジネスモデル図の生成に失敗した」は警告として出る。原因を直せない場合は、ノートと報告にその旨を書く。
 - `warnings` の「本文の数値がデータと一致しない」は1件ずつ確認する。照合は「同じ文に出てくる科目名」の値で行うので、数値の主語（科目名）を同じ文に書く。誤記なら本文を直す。資料にある別の数値（KPI など）なら出典つきで data JSON の `extra` に登録し（本文の書き方と名前が違えば `aliases`）、図と表を作り直してから再チェックする。数値の例示など照合が不要な文は `<!-- fra:nocheck -->…<!-- /fra:nocheck -->` で囲む。
 
 ### 10. 報告
 
-利用者には、作成・更新したファイル（ノート、図、データ）、決算の要点3つ、判断材料が不足している点、検証結果（丸め誤差以外の不一致がないこと）を簡潔に伝える。
+利用者には、作成・更新したファイル（ノート、図、データ）、決算の要点3つ、判断材料が不足している点、検証結果（丸め誤差以外の不一致がないこと）、ビジネスモデル図の結果（図の数、仮説として描いた関係の数、生成に失敗した場合は原因）を簡潔に伝える。
 
 ## トラブル時
 

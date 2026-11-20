@@ -208,6 +208,15 @@ def build_pl(facts, unit_hint):
                 x["parent"] = "net_income"
                 if not x["label"].endswith(("利益", "損失", "損益")):
                     x["label"] = f"{x['label']}に帰属する{re.sub(r'（.*?）', '', ni['label'])}"
+    # 税金費用を見積実効税率で計算する四半期は「法人税、住民税及び事業税」（IncomeTaxesCurrent）の1行だけで
+    # 合計（IncomeTaxes）の行がない → 存在しない親の内訳にせず、税金費用の行として段階利益の計算に含める
+    if not any(x.get("key") == "income_taxes" for x in lines):
+        orphans = [x for x in lines if x.get("parent") == "income_taxes"]
+        for x in orphans:
+            del x["parent"]
+            x["kind"] = "expense"
+        if len(orphans) == 1:
+            orphans[0]["key"] = "income_taxes"
     # 内訳の kind を親に合わせる（validate では parent 付きは連鎖から除外される）
     for ln in lines:
         if ln.get("kind") == "detail" and ln.get("parent") in set(PL_CHILD_SUFFIX.values()) | {"income_taxes"}:
